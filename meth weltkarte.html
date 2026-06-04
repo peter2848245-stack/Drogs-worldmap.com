@@ -1,0 +1,451 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Crystal Meth – Weltweite Abhängigkeit</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.8.5/d3.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/topojson/3.0.2/topojson.min.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:wght@300;400;600&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg: #0a0a12;
+    --panel: #12121e;
+    --border: #1e1e30;
+    --accent: #e63946;
+    --accent2: #ff6b6b;
+    --text: #e8e8f0;
+    --muted: #5a5a7a;
+    --low: #1a2a4a;
+    --med-low: #7b3f00;
+    --med: #b34700;
+    --med-high: #cc2200;
+    --high: #e63946;
+    --critical: #ff0033;
+  }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'DM Sans', sans-serif;
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  header {
+    padding: 28px 40px 16px;
+    display: flex;
+    align-items: baseline;
+    gap: 20px;
+    border-bottom: 1px solid var(--border);
+    position: relative;
+  }
+  header::after {
+    content: '';
+    position: absolute;
+    bottom: 0; left: 0; right: 0; height: 1px;
+    background: linear-gradient(90deg, var(--accent), transparent);
+  }
+
+  h1 {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 2.8rem;
+    letter-spacing: 0.06em;
+    color: #fff;
+    line-height: 1;
+  }
+  h1 span { color: var(--accent); }
+
+  .subtitle {
+    font-size: 0.78rem;
+    color: var(--muted);
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    font-weight: 600;
+  }
+
+  .source-tag {
+    margin-left: auto;
+    font-size: 0.7rem;
+    color: var(--muted);
+    font-style: italic;
+  }
+
+  .layout {
+    display: grid;
+    grid-template-columns: 1fr 280px;
+    gap: 0;
+    height: calc(100vh - 90px);
+  }
+
+  #map-container {
+    position: relative;
+    overflow: hidden;
+    background: radial-gradient(ellipse at 50% 40%, #0d1a2e 0%, #060610 70%);
+  }
+
+  #map-svg {
+    width: 100%;
+    height: 100%;
+  }
+
+  .country {
+    stroke: #1a1a2e;
+    stroke-width: 0.4px;
+    cursor: pointer;
+    transition: filter 0.15s;
+  }
+  .country:hover { filter: brightness(1.5); stroke: rgba(255,255,255,0.3); stroke-width: 0.8px; }
+
+  .graticule { fill: none; stroke: #0e1425; stroke-width: 0.5px; }
+  .sphere { fill: #060e1a; }
+
+  /* Tooltip */
+  #tooltip {
+    position: absolute;
+    background: rgba(10,10,20,0.97);
+    border: 1px solid var(--accent);
+    border-radius: 6px;
+    padding: 12px 16px;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.15s;
+    min-width: 200px;
+    backdrop-filter: blur(8px);
+    box-shadow: 0 4px 24px rgba(230,57,70,0.2);
+  }
+  #tooltip.visible { opacity: 1; }
+  #tooltip .tt-country { font-family: 'Bebas Neue', sans-serif; font-size: 1.3rem; color: #fff; letter-spacing: 0.05em; }
+  #tooltip .tt-users { font-size: 1.5rem; font-weight: 600; color: var(--accent); margin: 2px 0; }
+  #tooltip .tt-label { font-size: 0.7rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.1em; }
+  #tooltip .tt-level { font-size: 0.78rem; margin-top: 6px; padding: 3px 8px; border-radius: 3px; display: inline-block; font-weight: 600; }
+
+  /* Sidebar */
+  .sidebar {
+    background: var(--panel);
+    border-left: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    overflow-y: auto;
+  }
+
+  .sidebar-section {
+    padding: 20px;
+    border-bottom: 1px solid var(--border);
+  }
+  .sidebar-title {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 1rem;
+    letter-spacing: 0.1em;
+    color: var(--muted);
+    margin-bottom: 14px;
+  }
+
+  /* Legend */
+  .legend-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 9px;
+    font-size: 0.82rem;
+    cursor: pointer;
+    padding: 5px 8px;
+    border-radius: 4px;
+    transition: background 0.15s;
+  }
+  .legend-item:hover { background: rgba(255,255,255,0.04); }
+  .legend-dot {
+    width: 14px; height: 14px;
+    border-radius: 3px;
+    flex-shrink: 0;
+  }
+  .legend-label { color: var(--text); flex: 1; }
+  .legend-count { color: var(--muted); font-size: 0.72rem; }
+
+  /* Stats */
+  .stat-card {
+    background: rgba(255,255,255,0.03);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 12px 14px;
+    margin-bottom: 10px;
+  }
+  .stat-value { font-family: 'Bebas Neue', sans-serif; font-size: 1.8rem; color: var(--accent); line-height: 1; }
+  .stat-label { font-size: 0.7rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.08em; margin-top: 3px; }
+
+  /* Top list */
+  .rank-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 7px 0;
+    border-bottom: 1px solid rgba(255,255,255,0.04);
+    font-size: 0.83rem;
+  }
+  .rank-num { font-family: 'Bebas Neue', sans-serif; font-size: 1rem; color: var(--muted); width: 18px; }
+  .rank-name { flex: 1; color: var(--text); }
+  .rank-bar-wrap { width: 60px; height: 4px; background: rgba(255,255,255,0.06); border-radius: 2px; }
+  .rank-bar { height: 4px; border-radius: 2px; background: var(--accent); }
+  .rank-val { font-size: 0.72rem; color: var(--accent); width: 42px; text-align: right; }
+
+  /* Pulse dots for critical regions */
+  @keyframes pulse {
+    0% { opacity: 1; transform: scale(1); }
+    100% { opacity: 0; transform: scale(3); }
+  }
+  .pulse-ring {
+    animation: pulse 1.8s ease-out infinite;
+    transform-origin: center;
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div>
+    <div class="subtitle">Bildungsmaterial · Schulprojekt</div>
+    <h1>CRYSTAL <span>METH</span> WELTKARTE</h1>
+  </div>
+  <div class="source-tag">Quelle: UNODC World Drug Report 2023</div>
+</header>
+
+<div class="layout">
+  <div id="map-container">
+    <svg id="map-svg"></svg>
+    <div id="tooltip">
+      <div class="tt-country" id="tt-country">–</div>
+      <div class="tt-users" id="tt-users">–</div>
+      <div class="tt-label">geschätzte Abhängige</div>
+      <div class="tt-level" id="tt-level">–</div>
+    </div>
+  </div>
+
+  <aside class="sidebar">
+    <div class="sidebar-section">
+      <div class="sidebar-title">Globale Statistiken</div>
+      <div class="stat-card">
+        <div class="stat-value">27 Mio.</div>
+        <div class="stat-label">Meth-Nutzer weltweit</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-value">#2</div>
+        <div class="stat-label">Häufigste illegale Droge</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-value">+300%</div>
+        <div class="stat-label">Anstieg seit 2010</div>
+      </div>
+    </div>
+
+    <div class="sidebar-section">
+      <div class="sidebar-title">Legende</div>
+      <div class="legend-item"><div class="legend-dot" style="background:#e63946"></div><span class="legend-label">Sehr hoch</span><span class="legend-count">&gt;2 Mio.</span></div>
+      <div class="legend-item"><div class="legend-dot" style="background:#cc2200"></div><span class="legend-label">Hoch</span><span class="legend-count">500k–2 Mio.</span></div>
+      <div class="legend-item"><div class="legend-dot" style="background:#b34700"></div><span class="legend-label">Mittel</span><span class="legend-count">100k–500k</span></div>
+      <div class="legend-item"><div class="legend-dot" style="background:#7b3f00"></div><span class="legend-label">Niedrig-Mittel</span><span class="legend-count">20k–100k</span></div>
+      <div class="legend-item"><div class="legend-dot" style="background:#1a2a4a"></div><span class="legend-label">Gering / keine Daten</span><span class="legend-count">&lt;20k</span></div>
+    </div>
+
+    <div class="sidebar-section">
+      <div class="sidebar-title">Top Betroffene Regionen</div>
+      <div id="top-list"></div>
+    </div>
+
+    <div class="sidebar-section" style="margin-top:auto; border-top: 1px solid var(--border); border-bottom: none;">
+      <p style="font-size:0.7rem; color:var(--muted); line-height:1.6;">
+        Daten basieren auf Schätzungen der UNODC. Angaben zu Abhängigen sind Näherungswerte.
+        Diese Karte dient ausschließlich Bildungszwecken.
+      </p>
+    </div>
+  </aside>
+</div>
+
+<script>
+// Country data: ISO alpha-2 → { name, users (thousands), level }
+const methData = {
+  // CRITICAL / Very High
+  "CN": { name: "China", users: 3500, level: 5 },
+  "TH": { name: "Thailand", users: 2800, level: 5 },
+  "MY": { name: "Malaysia", users: 1200, level: 4 },
+  "PH": { name: "Philippinen", users: 2100, level: 5 },
+  "JP": { name: "Japan", users: 1900, level: 5 },
+  "KR": { name: "Südkorea", users: 900, level: 4 },
+  "AU": { name: "Australien", users: 1100, level: 4 },
+  "US": { name: "USA", users: 2600, level: 5 },
+  // High
+  "MX": { name: "Mexiko", users: 450, level: 3 },
+  "ID": { name: "Indonesien", users: 700, level: 4 },
+  "VN": { name: "Vietnam", users: 600, level: 4 },
+  "TW": { name: "Taiwan", users: 350, level: 3 },
+  "CZ": { name: "Tschechien", users: 120, level: 3 },
+  "SK": { name: "Slowakei", users: 80, level: 2 },
+  "DE": { name: "Deutschland", users: 130, level: 3 },
+  "NZ": { name: "Neuseeland", users: 95, level: 2 },
+  "MM": { name: "Myanmar", users: 800, level: 4 },
+  "LA": { name: "Laos", users: 200, level: 3 },
+  "KH": { name: "Kambodscha", users: 180, level: 3 },
+  "IN": { name: "Indien", users: 300, level: 3 },
+  // Medium
+  "PK": { name: "Pakistan", users: 150, level: 3 },
+  "ZA": { name: "Südafrika", users: 120, level: 3 },
+  "CA": { name: "Kanada", users: 200, level: 3 },
+  "GB": { name: "Großbritannien", users: 110, level: 3 },
+  "FR": { name: "Frankreich", users: 90, level: 2 },
+  "NL": { name: "Niederlande", users: 70, level: 2 },
+  "AT": { name: "Österreich", users: 60, level: 2 },
+  "HU": { name: "Ungarn", users: 55, level: 2 },
+  "PL": { name: "Polen", users: 65, level: 2 },
+  "SG": { name: "Singapur", users: 40, level: 2 },
+  "HK": { name: "Hongkong", users: 45, level: 2 },
+  "MN": { name: "Mongolei", users: 30, level: 2 },
+  "BD": { name: "Bangladesch", users: 90, level: 2 },
+  "NP": { name: "Nepal", users: 40, level: 2 },
+  "IR": { name: "Iran", users: 80, level: 2 },
+  "BR": { name: "Brasilien", users: 110, level: 2 },
+  "AR": { name: "Argentinien", users: 50, level: 2 },
+  "CL": { name: "Chile", users: 45, level: 2 },
+  "NG": { name: "Nigeria", users: 60, level: 2 },
+  "KE": { name: "Kenia", users: 35, level: 2 },
+  "ET": { name: "Äthiopien", users: 25, level: 1 },
+  "EG": { name: "Ägypten", users: 30, level: 1 },
+};
+
+// Color scale
+function getColor(level) {
+  const colors = {
+    0: "#0e1a2e",
+    1: "#1a2a4a",
+    2: "#7b3f00",
+    3: "#b34700",
+    4: "#cc2200",
+    5: "#e63946"
+  };
+  return colors[level] || colors[0];
+}
+
+function getLevelLabel(level) {
+  const labels = {0:"Keine Daten",1:"Gering",2:"Niedrig-Mittel",3:"Mittel",4:"Hoch",5:"Sehr hoch"};
+  return labels[level] || "Keine Daten";
+}
+function getLevelBg(level) {
+  return { 0:"#1a1a2e", 1:"#1a2a4a", 2:"#7b3f00", 3:"#b34700", 4:"#cc2200", 5:"rgba(230,57,70,0.25)" }[level] || "#1a1a2e";
+}
+
+// Populate top list
+const topCountries = Object.entries(methData)
+  .sort((a,b) => b[1].users - a[1].users)
+  .slice(0, 8);
+const maxUsers = topCountries[0][1].users;
+const topList = document.getElementById('top-list');
+topCountries.forEach(([iso, d], i) => {
+  const pct = (d.users / maxUsers * 100).toFixed(0);
+  const val = d.users >= 1000 ? (d.users/1000).toFixed(1)+"Mio." : d.users+"k";
+  topList.innerHTML += `
+    <div class="rank-item">
+      <div class="rank-num">${i+1}</div>
+      <div class="rank-name">${d.name}</div>
+      <div class="rank-bar-wrap"><div class="rank-bar" style="width:${pct}%"></div></div>
+      <div class="rank-val">~${val}</div>
+    </div>`;
+});
+
+// Map
+const svg = d3.select("#map-svg");
+const container = document.getElementById("map-container");
+const tooltip = document.getElementById("tooltip");
+
+function drawMap() {
+  svg.selectAll("*").remove();
+  const W = container.clientWidth;
+  const H = container.clientHeight;
+
+  const projection = d3.geoNaturalEarth1()
+    .scale(W / 6.5)
+    .translate([W / 2, H / 2]);
+
+  const path = d3.geoPath().projection(projection);
+
+  // Graticule
+  const graticule = d3.geoGraticule();
+  svg.append("path").datum({type:"Sphere"}).attr("class","sphere").attr("d", path);
+  svg.append("path").datum(graticule()).attr("class","graticule").attr("d", path);
+
+  fetch("https://cdn.jsdelivr.net/npm/world-atlas@2/countries-110m.json")
+    .then(r => r.json())
+    .then(world => {
+      const countries = topojson.feature(world, world.objects.countries);
+
+      // Map numeric ISO 3166-1 to alpha-2
+      // We'll use a lookup for the key countries
+      const numToAlpha2 = {
+        156:"CN",764:"TH",458:"MY",608:"PH",392:"JP",410:"KR",36:"AU",840:"US",
+        484:"MX",360:"ID",704:"VN",158:"TW",203:"CZ",703:"SK",276:"DE",554:"NZ",
+        104:"MM",418:"LA",116:"KH",356:"IN",586:"PK",710:"ZA",124:"CA",826:"GB",
+        250:"FR",528:"NL",40:"AT",348:"HU",616:"PL",702:"SG",344:"HK",496:"MN",
+        50:"BD",524:"NP",364:"IR",76:"BR",32:"AR",152:"CL",566:"NG",404:"KE",
+        231:"ET",818:"EG"
+      };
+
+      svg.selectAll(".country")
+        .data(countries.features)
+        .join("path")
+        .attr("class", "country")
+        .attr("d", path)
+        .attr("fill", d => {
+          const alpha2 = numToAlpha2[+d.id];
+          const info = alpha2 ? methData[alpha2] : null;
+          return info ? getColor(info.level) : "#0e1a2e";
+        })
+        .on("mousemove", function(event, d) {
+          const alpha2 = numToAlpha2[+d.id];
+          const info = alpha2 ? methData[alpha2] : null;
+          const name = info ? info.name : (d.properties?.name || "Unbekannt");
+          const users = info ? (info.users >= 1000 ? "~"+(info.users/1000).toFixed(1)+" Mio." : "~"+info.users+"k") : "keine Daten";
+          const level = info ? info.level : 0;
+
+          document.getElementById("tt-country").textContent = name;
+          document.getElementById("tt-users").textContent = users;
+          const lvlEl = document.getElementById("tt-level");
+          lvlEl.textContent = getLevelLabel(level);
+          lvlEl.style.background = getLevelBg(level);
+          lvlEl.style.color = level >= 3 ? "#fff" : "#aaa";
+
+          const rect = container.getBoundingClientRect();
+          let x = event.clientX - rect.left + 14;
+          let y = event.clientY - rect.top - 20;
+          if (x + 220 > W) x = event.clientX - rect.left - 224;
+          tooltip.style.left = x + "px";
+          tooltip.style.top = y + "px";
+          tooltip.classList.add("visible");
+        })
+        .on("mouseleave", () => tooltip.classList.remove("visible"));
+
+      // Pulse circles for critical hotspots
+      const hotspots = [
+        { lat: 15, lng: 102, label: "Goldenes Dreieck" },
+        { lat: 35, lng: 105, label: "China" },
+        { lat: 37, lng: -95, label: "USA" },
+        { lat: 13, lng: 122, label: "Philippinen" },
+      ];
+
+      hotspots.forEach(h => {
+        const [cx, cy] = projection([h.lng, h.lat]);
+        if (!cx || !cy) return;
+        // Static dot
+        svg.append("circle").attr("cx",cx).attr("cy",cy).attr("r",4)
+          .attr("fill","#ff0033").attr("opacity",0.9);
+        // Pulse ring
+        svg.append("circle").attr("cx",cx).attr("cy",cy).attr("r",4)
+          .attr("fill","none").attr("stroke","#ff0033").attr("stroke-width",1.5)
+          .attr("class","pulse-ring").style("opacity",0.7);
+      });
+    });
+}
+
+drawMap();
+window.addEventListener("resize", drawMap);
+</script>
+</body>
+</html>
